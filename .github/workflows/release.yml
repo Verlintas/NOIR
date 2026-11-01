@@ -106,7 +106,7 @@ jobs:
           if ($v -notmatch "NOIR") { throw "NOIR.exe did not run: [$v]" }
           Compress-Archive -Path stage\* -DestinationPath "release/noir-$env:GITHUB_REF_NAME-Windows-portable.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: noir-${{ runner.os }}
           path: release/*.zip
