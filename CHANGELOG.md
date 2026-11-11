@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **container awareness** — NOIR recognises when it runs inside Docker, Podman,
   Kubernetes or LXC. `doctor` shows a `container` row, and the "no device"
   guidance explains USB passthrough instead of blaming the cable.
+- **Docker image** — a `Dockerfile` builds an image with a JRE, adb and NOIR,
+  so a Linux host needs nothing but Docker. The README documents the USB
+  passthrough flags, the volume that keeps the adb authorisation, and how to
+  reuse a host adb server where USB cannot be passed through.
 
 ## [0.4.2] — 2026-11-07
 

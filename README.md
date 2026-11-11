@@ -200,6 +200,44 @@ cd NOIR
 ./cli/build/install/noir/bin/noir --about
 ```
 
+**方式三：Docker（Linux 宿主机）**
+
+镜像里带 JRE、adb 和 NOIR 本身，宿主机只需要 Docker。在仓库根目录构建
+（首次会下载 Gradle 和依赖，需要几分钟）：
+
+```bash
+docker build -t noir .
+```
+
+```bash
+docker run --rm -it \
+  --device-cgroup-rule='c 189:* rmw' -v /dev/bus/usb:/dev/bus/usb \
+  -v noir-home:/root -v "$PWD:/work" \
+  noir
+```
+
+| 参数 | 作用 |
+|---|---|
+| `--device-cgroup-rule='c 189:* rmw'`<br>`-v /dev/bus/usb:/dev/bus/usb` | 把 USB 设备透传进容器，重新插拔也有效 |
+| `-v noir-home:/root` | 保存 adb 授权密钥和扫描缓存；不加的话，每次运行手机都要重新点「允许」 |
+| `-v "$PWD:/work"` | 报告写到当前目录的 `noir-out/` |
+
+- 宿主机上如果也装了 adb，先执行 `adb kill-server`，否则它会占住手机。
+- 命令末尾可以接任何子命令，例如 `… noir doctor`、`… noir ui`。
+- `deep` / `deepscan` 需要的 jadx 不在镜像里：执行一次 `… noir setup --yes`，它会下载到 `noir-home`。
+- 容器内以 root 运行，所以 `noir-out/` 里的文件属主是 root。
+- 在容器里找不到设备时，NOIR 会直接提示上面的透传参数。
+
+macOS / Windows 的 Docker Desktop 不能把 USB 设备透传进容器，建议直接用方式一的便携包。
+一定要用容器的话，先在宿主机上启动 adb（`adb start-server`），再让容器复用它：
+
+```bash
+docker run --rm -it \
+  -e ADB_SERVER_SOCKET=tcp:host.docker.internal:5037 \
+  -v noir-home:/root -v "$PWD:/work" \
+  noir
+```
+
 ## 构建
 
 ```bash

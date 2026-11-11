@@ -1,0 +1,15 @@
+# Allowlist: only what the Gradle build needs enters the build context, so
+# local scan reports (noir-out/) and tool caches can never end up in a layer.
+*
+!build.gradle.kts
+!settings.gradle.kts
+!gradle.properties
+!gradlew
+!gradle/
+!core/
+!cli/
+!LICENSE
+
+**/build/
+**/.gradle/
+**/.kotlin/
