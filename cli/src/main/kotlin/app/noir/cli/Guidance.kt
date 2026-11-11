@@ -7,6 +7,10 @@ package app.noir.cli
 
 import app.noir.core.Lang
 import app.noir.core.Tui
+import app.noir.core.platform.ContainerRuntime
+import app.noir.core.platform.DockerDaemon
+import app.noir.core.platform.DockerStatus
+import app.noir.core.platform.Platform
 
 /** Human-friendly text blocks: every failure should end with an action. */
 object Guidance {
@@ -170,6 +174,115 @@ object Guidance {
         |  • 或者让 NOIR 自己下载：noir setup
         """.trimMargin()
     })
+
+    /**
+     * Doctor rows for Docker. Docker is optional, so "not installed" is a plain
+     * fact; a daemon that is installed but unusable still ends with an action.
+     */
+    fun docker(
+        status: DockerStatus,
+        lang: Lang = LANG,
+        windows: Boolean = Platform.isWindows,
+        mac: Boolean = Platform.isMac
+    ): String {
+        fun l(zh: String, en: String) = if (lang == Lang.EN) en else zh
+
+        if (!status.installed) {
+            return l(
+                "  docker    未安装（可选：只有想在容器里运行 NOIR 才需要）",
+                "  docker    not installed (optional: only needed to run NOIR in a container)"
+            )
+        }
+
+        val client = status.clientVersion?.let { l("客户端 $it", "client $it") }
+        val daemon = when (status.daemon) {
+            DockerDaemon.RUNNING ->
+                status.serverVersion?.let { l("守护进程 $it 运行中", "daemon $it running") }
+                    ?: l("守护进程运行中", "daemon running")
+            DockerDaemon.STOPPED -> l("守护进程未运行", "daemon not running")
+            DockerDaemon.DENIED -> l("守护进程拒绝访问", "daemon refused access")
+            DockerDaemon.UNKNOWN -> l("守护进程状态未知", "daemon state unknown")
+        }
+        val next = when (status.daemon) {
+            DockerDaemon.RUNNING -> null
+            DockerDaemon.STOPPED ->
+                if (windows || mac) {
+                    l("启动方法：打开 Docker Desktop", "start it: open Docker Desktop")
+                } else {
+                    l("启动方法：sudo systemctl start docker", "start it: sudo systemctl start docker")
+                }
+            DockerDaemon.DENIED -> when {
+                windows -> l(
+                    "解决方法：把当前账号加入 docker-users 用户组，然后重新登录",
+                    "fix: add your account to the docker-users group, then sign in again"
+                )
+                mac -> l("解决方法：重启 Docker Desktop", "fix: restart Docker Desktop")
+                else -> l(
+                    "解决方法：sudo usermod -aG docker \$USER，然后重新登录",
+                    "fix: sudo usermod -aG docker \$USER, then log in again"
+                )
+            }
+            DockerDaemon.UNKNOWN -> status.detail
+        }
+
+        val indent = " ".repeat(12)
+        val sb = StringBuilder("  docker    ").append(status.cli)
+        sb.append('\n').append(indent).append(asciiText(listOfNotNull(client, daemon).joinToString(" · ")))
+        if (next != null) sb.append('\n').append(indent).append(asciiText(next))
+        return sb.toString()
+    }
+
+    /** Doctor row shown only when NOIR itself runs inside a container. */
+    fun container(runtime: ContainerRuntime, lang: Lang = LANG): String {
+        val name = if (runtime == ContainerRuntime.OTHER) {
+            if (lang == Lang.EN) "yes" else "是"
+        } else {
+            runtime.label
+        }
+        return "  container $name"
+    }
+
+    /**
+     * "No device" inside a container: the cable is rarely the problem there,
+     * the missing USB passthrough is.
+     */
+    fun containerDeviceGuide(runtime: ContainerRuntime, lang: Lang = LANG): String {
+        val known = runtime != ContainerRuntime.OTHER
+        val zh = listOf(
+            "",
+            "NOIR 正在容器里运行" + (if (known) "（${runtime.label}）" else "") +
+                "，容器默认看不到宿主机的 USB 设备。",
+            "",
+            "1. Linux 宿主机：docker run 时加上这两个参数，把 USB 透传进容器",
+            "   --device-cgroup-rule='c 189:* rmw' -v /dev/bus/usb:/dev/bus/usb",
+            "   宿主机上的 adb 会占住手机，先执行 adb kill-server",
+            "",
+            "2. macOS / Windows：Docker Desktop 不能透传 USB",
+            "   改用便携包，或让容器复用宿主机的 adb server：",
+            "   -e ADB_SERVER_SOCKET=tcp:host.docker.internal:5037",
+            "",
+            "3. 手机端仍需开启 USB 调试，并在弹窗里点「允许」"
+        )
+        val en = listOf(
+            "",
+            "NOIR is running inside a container" + (if (known) " (${runtime.label})" else "") +
+                ". Containers cannot see the host's USB devices by default.",
+            "",
+            "1. Linux host: add these two flags to docker run to pass USB through",
+            "   --device-cgroup-rule='c 189:* rmw' -v /dev/bus/usb:/dev/bus/usb",
+            "   A host adb server holds the phone; stop it first: adb kill-server",
+            "",
+            "2. macOS / Windows: Docker Desktop cannot pass USB through",
+            "   Use the portable build, or reuse the host's adb server:",
+            "   -e ADB_SERVER_SOCKET=tcp:host.docker.internal:5037",
+            "",
+            "3. The phone still needs USB debugging on, and its prompt allowed."
+        )
+        return guideBox(
+            if (lang == Lang.EN) "no device detected in the container" else "容器里没有检测到设备",
+            if (lang == Lang.EN) en else zh
+        )
+    }
 
     fun error(title: String, hint: String? = null): String {
         val total = (Tui.terminalColumns() - 2).coerceIn(40, 100)

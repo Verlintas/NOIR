@@ -29,6 +29,8 @@ import app.noir.core.apk.ManifestAnalyzer
 import app.noir.core.apk.ManifestFacts
 import app.noir.core.apk.Trackers
 import app.noir.core.jadx.Jadx
+import app.noir.core.platform.ContainerRuntime
+import app.noir.core.platform.Docker
 import app.noir.core.platform.Platform
 import app.noir.core.platform.Setup
 import java.io.File
@@ -209,7 +211,7 @@ private fun usage() {
           noir                                guided setup + scan (interactive)
           noir --about                        what this is, what it writes, license
           noir --version                      print the version
-          noir doctor                         check adb / jadx / device
+          noir doctor                         check adb / jadx / docker / device
           noir setup                          download missing tools into ~/.noir/tools
           noir devices                        list connected devices
           noir scan [options]                 inventory apps, permissions and endpoints
@@ -366,7 +368,7 @@ private fun cmdDevices(raw: List<String>) {
     val filter = args.value("serial")
     val devices = adb.devices().let { all -> if (filter == null) all else all.filter { it.serial == filter } }
     if (devices.isEmpty()) {
-        println(Guidance.deviceGuide())
+        println(noDeviceGuide())
         return
     }
     devices.firstOrNull { it.state == "device" }?.let { applyDeviceLanguage(adb, it) }
@@ -726,6 +728,12 @@ private fun cmdDoctor(raw: List<String>) {
     println("  platform  ${Platform.describe()}")
     println("  java      ${System.getProperty("java.version")}")
 
+    // Docker is optional: report it before anything that can end the check, never fail on it.
+    CONTAINER?.let { println(Guidance.container(it)) }
+    val docker = Docker.probe()
+    // Inside a container the Docker CLI is normally absent; "not installed" would only confuse.
+    if (docker.installed || CONTAINER == null) println(Guidance.docker(docker))
+
     val adbPath = Platform.findAdb(args.value("adb"))
     if (adbPath == null) {
         println(t("  adb       未找到", "  adb       not found"))
@@ -748,7 +756,7 @@ private fun cmdDoctor(raw: List<String>) {
     if (devices.isEmpty()) {
         println(t("  device    未连接", "  device    not connected"))
         println()
-        println(Guidance.deviceGuide())
+        println(noDeviceGuide())
         exitProcess(1)
     } else {
         devices.forEach { println("  device    ${it.serial}  ${it.state}  ${it.model}") }
@@ -1617,6 +1625,13 @@ private fun offerCleanup(args: Args, adb: Adb, scan: ScanResult, findings: List<
 private fun isInteractive(): Boolean =
     System.console() != null || System.getenv("NOIR_INTERACTIVE") == "1"
 
+/** The container runtime NOIR itself runs in; null on an ordinary host. */
+private val CONTAINER: ContainerRuntime? by lazy { Docker.container() }
+
+/** Inside a container a missing device is usually missing USB passthrough, not a bad cable. */
+private fun noDeviceGuide(): String =
+    CONTAINER?.let { Guidance.containerDeviceGuide(it) } ?: Guidance.deviceGuide()
+
 private fun connectAdb(args: Args): Adb {
     val explicit = args.value("adb")
     if (explicit != null && !File(explicit).exists()) {
@@ -1683,7 +1698,7 @@ private fun awaitDevice(adb: Adb, requested: String?, interactive: Boolean): Dev
 
         val unauthorized = devices.any { it.state == "unauthorized" }
         if (!printed) {
-            println(if (unauthorized) Guidance.unauthorizedGuide() else Guidance.deviceGuide())
+            println(if (unauthorized) Guidance.unauthorizedGuide() else noDeviceGuide())
             printed = true
         }
 
@@ -1703,7 +1718,7 @@ private fun awaitDevice(adb: Adb, requested: String?, interactive: Boolean): Dev
         if (waited >= 180) {
             throw NoirException(
                 t("等了 180 秒仍然没有设备。", "no device appeared after 180 seconds."),
-                Guidance.deviceGuide()
+                noDeviceGuide()
             )
         }
 

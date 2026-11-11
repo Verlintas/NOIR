@@ -84,7 +84,7 @@ object Platform {
         return candidates.firstOrNull(::usable)
     }
 
-    private fun usable(path: String): Boolean = File(path).let { it.isFile && (isWindows || it.canExecute()) }
+    internal fun usable(path: String): Boolean = File(path).let { it.isFile && (isWindows || it.canExecute()) }
 
     /** Minimal `which`, without spawning a shell. */
     fun which(command: String): String? {

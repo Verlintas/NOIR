@@ -78,6 +78,8 @@ noir doctor
 NOIR doctor
   platform  Mac OS X aarch64
   java      17.0.19
+  docker    /usr/local/bin/docker
+            客户端 29.9.2 · 守护进程 29.9.2 运行中
   adb       /opt/homebrew/.../platform-tools/adb
             Version 37.0.1-15733141
   device    178b0d2f  device  2509FPN0BC
@@ -88,6 +90,24 @@ NOIR doctor
 noir setup          # 缺什么下什么
 noir setup --yes    # 不询问，适合脚本
 ```
+
+### Docker 安装 / 运行检测
+
+`docker` 一行回答两个问题：Docker 装了没有，守护进程在不在跑。Docker 是可选项
+（只有想在容器里运行 NOIR 才需要），所以这一行只报告，不影响 `doctor` 的退出码：
+
+| 情况 | `doctor` 显示 |
+|---|---|
+| 没装 | `未安装（可选：…）` |
+| 装了，守护进程在跑 | `客户端 29.9.2 · 守护进程 29.9.2 运行中` |
+| 装了，没启动 | `守护进程未运行`，下一行是启动方法 |
+| 装了，当前用户没权限 | `守护进程拒绝访问`，下一行是解决方法 |
+| 认不出的错误，或 10 秒内没有应答 | `守护进程状态未知`，下一行是原因 |
+
+检测只调用本机的 `docker --version` 和 `docker version`，不拉镜像，也不启动容器。
+
+NOIR 自己跑在容器里时（Docker / Podman / Kubernetes / LXC），`doctor` 会多一行
+`container docker`。这时找不到设备，提示会换成 USB 透传的做法，而不是让你换数据线。
 
 ## 出现问题时
 
