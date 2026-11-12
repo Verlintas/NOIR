@@ -27,10 +27,14 @@ data class PkgMeta(
  */
 object Dumpsys {
 
-    private val PKG = Regex("^  Package \\[([^\\]]+)]")
-    private val SHARED_USER = Regex("^sharedUser=SharedUserSetting\\{[0-9a-f]+ ([^/]+)/")
-    private val SHARED = Regex("^  SharedUser \\[([^\\]]+)]")
-    private val PKG_SETTING = Regex("PackageSetting\\{[0-9a-f]+ ([^/]+)/")
+    // OEM dumpsys output is not always two-space indented, and some releases
+    // put "Shared users:" before "Packages:". Match any indentation and keep
+    // the two sections independent instead of treating the rest of the dump as
+    // a shared-user section.
+    private val PKG = Regex("^\\s*Package\\s*\\[([^\\]]+)]")
+    private val SHARED_USER = Regex("^sharedUser=SharedUserSetting\\{[^\\s]+ ([^/]+)/")
+    private val SHARED = Regex("^\\s*SharedUser\\s*\\[([^\\]]+)]")
+    private val PKG_SETTING = Regex("^PackageSetting\\{[^\\s]+ ([^/]+)/")
     private val GRANTED = Regex("^android\\.permission\\.([A-Z0-9_]+): granted=true(?:[,;].*)?$")
 
     fun parse(text: String): Map<String, PkgMeta> {
@@ -41,47 +45,38 @@ object Dumpsys {
 
         var current: Mutable? = null
         var currentShared: String? = null
-        var inSharedSection = false
 
         for (line in text.lineSequence()) {
-            if (line.startsWith("Shared users:")) {
-                inSharedSection = true
+            val pkgMatch = PKG.find(line)
+            if (pkgMatch != null) {
+                current = acc.getOrPut(pkgMatch.groupValues[1]) { Mutable() }
+                currentShared = null
+                continue
+            }
+
+            val sharedMatch = SHARED.find(line)
+            if (sharedMatch != null) {
+                currentShared = sharedMatch.groupValues[1]
+                current = null
+                sharedPackages.getOrPut(currentShared) { mutableListOf() }
+                sharedPerms.getOrPut(currentShared) { mutableSetOf() }
+                continue
+            }
+
+            // A top-level section header ends the current package/shared block.
+            // Package and SharedUser headers are matched above, so a section
+            // such as "Packages:" or "Dexopt state:" is safe to reset on.
+            if (line.isNotEmpty() && !line[0].isWhitespace() && line.trimEnd().endsWith(":")) {
                 current = null
                 currentShared = null
                 continue
             }
 
-            if (!inSharedSection) {
-                val pkgMatch = PKG.find(line)
-                if (pkgMatch != null) {
-                    current = acc.getOrPut(pkgMatch.groupValues[1]) { Mutable() }
-                    continue
-                }
-                val c = current ?: continue
-                val s = line.trim()
-                when {
-                    (s.startsWith("appId=") || s.startsWith("userId=")) && c.appId.isEmpty() ->
-                        c.appId = s.substringAfter('=')
-                    s.startsWith("flags=[") && c.flags.isEmpty() -> c.flags = s
-                    s.startsWith("installerPackageName=") && c.installer == null -> {
-                        val v = s.removePrefix("installerPackageName=")
-                        c.installer = if (v == "null") null else v
-                    }
-                    s.startsWith("sharedUser=") && c.sharedUser == null ->
-                        c.sharedUser = SHARED_USER.find(s)?.groupValues?.get(1)
-                    else -> GRANTED.find(s)?.let { c.perms.add(it.groupValues[1]) }
-                }
-            } else {
-                val sharedMatch = SHARED.find(line)
-                if (sharedMatch != null) {
-                    currentShared = sharedMatch.groupValues[1]
-                    sharedPackages.getOrPut(currentShared) { mutableListOf() }
-                    sharedPerms.getOrPut(currentShared) { mutableSetOf() }
-                    continue
-                }
-                val shared = currentShared ?: continue
-                val s = line.trim()
+            val s = line.trim()
+            if (s.isEmpty()) continue
 
+            val shared = currentShared
+            if (shared != null) {
                 when {
                     s.startsWith("appId=") -> sharedAppId[shared] = s.removePrefix("appId=")
                     else -> {
@@ -89,6 +84,21 @@ object Dumpsys {
                         GRANTED.find(s)?.let { sharedPerms.getValue(shared).add(it.groupValues[1]) }
                     }
                 }
+                continue
+            }
+
+            val c = current ?: continue
+            when {
+                (s.startsWith("appId=") || s.startsWith("userId=")) && c.appId.isEmpty() ->
+                    c.appId = s.substringAfter('=')
+                s.startsWith("flags=[") && c.flags.isEmpty() -> c.flags = s
+                s.startsWith("installerPackageName=") && c.installer == null -> {
+                    val v = s.removePrefix("installerPackageName=")
+                    c.installer = if (v == "null") null else v
+                }
+                s.startsWith("sharedUser=") && c.sharedUser == null ->
+                    c.sharedUser = SHARED_USER.find(s)?.groupValues?.get(1)
+                else -> GRANTED.find(s)?.let { c.perms.add(it.groupValues[1]) }
             }
         }
 

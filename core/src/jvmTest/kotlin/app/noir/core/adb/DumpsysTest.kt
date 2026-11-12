@@ -128,4 +128,71 @@ class DumpsysTest {
         assertTrue(meta.perms.contains("INTERNET"))
         assertFalse(meta.perms.contains("RECORD_AUDIO"))
     }
+
+    @Test
+    fun `accepts OEM indentation and package headers at column zero`() {
+        val text = dump(
+            "Packages:",
+            "    Package [com.example.four] (a):",
+            "        appId=10200",
+            "        flags=[ HAS_CODE ]",
+            "        android.permission.INTERNET: granted=true",
+            "\tPackage [com.example.tab] (b):",
+            "\t\tappId=10201",
+            "\t\tandroid.permission.INTERNET: granted=true",
+            "Package [com.example.zero] (c):",
+            "  appId=10202",
+            "  android.permission.INTERNET: granted=true"
+        )
+
+        val parsed = Dumpsys.parse(text)
+        assertEquals(setOf("com.example.four", "com.example.tab", "com.example.zero"), parsed.keys)
+        parsed.values.forEach { assertTrue(it.perms.contains("INTERNET")) }
+    }
+
+    @Test
+    fun `parses a shared users section that appears before packages`() {
+        val text = dump(
+            "Shared users:",
+            "  SharedUser [android.uid.system] (def):",
+            "    appId=1000",
+            "    Packages",
+            "      PackageSetting{abc com.system.app/1000}",
+            "    install permissions:",
+            "      android.permission.INTERNET: granted=true",
+            "Packages:",
+            "    Package [com.system.app] (aaa):",
+            "        flags=[ SYSTEM ]",
+            "        android.permission.CAMERA: granted=true",
+            "    Package [com.user.app] (bbb):",
+            "        appId=10500",
+            "        android.permission.INTERNET: granted=true"
+        )
+
+        val parsed = Dumpsys.parse(text)
+        val system = parsed.getValue("com.system.app")
+        assertTrue(system.isSystem)
+        assertTrue(system.perms.contains("INTERNET"), "shared permission must be merged in")
+        assertTrue(system.perms.contains("CAMERA"), "package permission must still be parsed after shared users")
+        assertEquals("android.uid.system", system.sharedUser)
+
+        val user = parsed.getValue("com.user.app")
+        assertFalse(user.isSystem)
+        assertTrue(user.perms.contains("INTERNET"))
+        assertFalse(user.perms.contains("CAMERA"), "shared permissions must not leak to other uids")
+    }
+
+    @Test
+    fun `parses CRLF output from adb shell`() {
+        val text = listOf(
+            "Packages:",
+            "  Package [com.example.crlf] (aaa):",
+            "    appId=10200",
+            "    android.permission.INTERNET: granted=true"
+        ).joinToString("\r\n")
+
+        val meta = Dumpsys.parse(text).getValue("com.example.crlf")
+        assertTrue(meta.perms.contains("INTERNET"))
+        assertEquals("10200", meta.appId)
+    }
 }

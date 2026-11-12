@@ -803,6 +803,18 @@ private fun performScan(args: Args, limitOverride: Int? = null): ScanResult {
 
     val meta = Dumpsys.parse(dump.output)
     say("[*] parsed: ${meta.size}")
+    if (paths.isNotEmpty() && meta.isEmpty()) {
+        throw NoirException(
+            t(
+                "dumpsys package 输出无法解析（设备上有 ${paths.size} 个包）。",
+                "could not parse dumpsys package output (${paths.size} packages on device)."
+            ),
+            t(
+                "这通常是新系统或厂商改了格式。请把 `adb shell dumpsys package | head -80` 的脱敏输出反馈到项目 issue。",
+                "This usually means the OS or OEM changed the format. Please report a redacted `adb shell dumpsys package | head -80` sample in a project issue."
+            )
+        )
+    }
 
     val only = args.value("only")?.let {
         runCatching { Regex(it) }.getOrElse {
