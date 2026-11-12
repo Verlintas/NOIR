@@ -18,8 +18,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   guidance explains USB passthrough instead of blaming the cable.
 - **Docker image** — a `Dockerfile` builds an image with a JRE, adb and NOIR,
   so a Linux host needs nothing but Docker. The README documents the USB
-  passthrough flags, the volume that keeps the adb authorisation, and how to
-  reuse a host adb server where USB cannot be passed through.
+  passthrough flags and the volume that keeps the adb authorisation. Docker
+  Desktop cannot pass USB through, so macOS and Windows stay with the
+  portable build.
 
 ### Fixed
 

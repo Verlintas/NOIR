@@ -115,7 +115,6 @@ class DockerGuidanceTest {
             ContainerRuntime.entries.forEach { runtime ->
                 val guide = Guidance.containerDeviceGuide(runtime, lang)
                 assertTrue(guide.contains("/dev/bus/usb"), "no passthrough hint:\n$guide")
-                assertTrue(guide.contains("ADB_SERVER_SOCKET"), "no adb server hint:\n$guide")
                 guide.lines().forEach { line ->
                     assertTrue(Tui.visibleWidth(line) <= limit, "line wider than $limit: [$line]")
                 }
@@ -123,5 +122,21 @@ class DockerGuidanceTest {
         }
         assertTrue(Guidance.containerDeviceGuide(ContainerRuntime.DOCKER, Lang.EN).contains("(docker)"))
         assertFalse(Guidance.containerDeviceGuide(ContainerRuntime.OTHER, Lang.EN).contains("("))
+    }
+
+    @Test
+    fun `container guide sends docker desktop users to usb, not to a host adb server`() {
+        // A host adb server listens on 127.0.0.1 only, and opening it up with
+        // `adb -a` exposes an unauthenticated port. The guide must not suggest either.
+        listOf(Lang.ZH, Lang.EN).forEach { lang ->
+            ContainerRuntime.entries.forEach { runtime ->
+                val guide = Guidance.containerDeviceGuide(runtime, lang)
+                listOf("ADB_SERVER_SOCKET", "host.docker.internal", "5037", "adb -a").forEach { risky ->
+                    assertFalse(guide.contains(risky), "guide points at a host adb server ($risky):\n$guide")
+                }
+            }
+        }
+        assertTrue(Guidance.containerDeviceGuide(ContainerRuntime.DOCKER, Lang.EN).contains("portable build"))
+        assertTrue(Guidance.containerDeviceGuide(ContainerRuntime.DOCKER, Lang.ZH).contains("便携包"))
     }
 }

@@ -258,8 +258,7 @@ object Guidance {
             "   宿主机上的 adb 会占住手机，先执行 adb kill-server",
             "",
             "2. macOS / Windows：Docker Desktop 不能透传 USB",
-            "   改用便携包，或让容器复用宿主机的 adb server：",
-            "   -e ADB_SERVER_SOCKET=tcp:host.docker.internal:5037",
+            "   请改用便携包，直接在宿主机上运行 NOIR",
             "",
             "3. 手机端仍需开启 USB 调试，并在弹窗里点「允许」"
         )
@@ -273,8 +272,7 @@ object Guidance {
             "   A host adb server holds the phone; stop it first: adb kill-server",
             "",
             "2. macOS / Windows: Docker Desktop cannot pass USB through",
-            "   Use the portable build, or reuse the host's adb server:",
-            "   -e ADB_SERVER_SOCKET=tcp:host.docker.internal:5037",
+            "   Use the portable build and run NOIR on the host instead",
             "",
             "3. The phone still needs USB debugging on, and its prompt allowed."
         )

@@ -228,15 +228,10 @@ docker run --rm -it \
 - 容器内以 root 运行，所以 `noir-out/` 里的文件属主是 root。
 - 在容器里找不到设备时，NOIR 会直接提示上面的透传参数。
 
-macOS / Windows 的 Docker Desktop 不能把 USB 设备透传进容器，建议直接用方式一的便携包。
-一定要用容器的话，先在宿主机上启动 adb（`adb start-server`），再让容器复用它：
+macOS / Windows 的 Docker Desktop 不能把 USB 设备透传进容器，这两个系统请用方式一的便携包。
 
-```bash
-docker run --rm -it \
-  -e ADB_SERVER_SOCKET=tcp:host.docker.internal:5037 \
-  -v noir-home:/root -v "$PWD:/work" \
-  noir
-```
+不要改成让容器去连宿主机的 adb server：它默认只监听 `127.0.0.1:5037`，容器通常连不上；
+而用 `adb -a` 让它监听所有网卡，会把一个没有认证的端口暴露给整个局域网，任何人都能借它控制手机。
 
 ## 构建
 
