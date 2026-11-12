@@ -69,23 +69,36 @@ object Docker {
     private val CLIENT_VERSION = Regex("\\bversion\\s+v?([0-9][^\\s,]*)", RegexOption.IGNORE_CASE)
     private val VERSION_LINE = Regex("^v?[0-9]+\\.[0-9]\\S*$")
 
-    // Checked before STOPPED: a refused socket also mentions "connect".
-    // Windows words its part of the message in the system language.
-    private val DENIED_MARKERS = listOf(
+    // Sentences the Docker CLI writes itself, and only when it could not reach
+    // the daemon's socket or pipe at all. "error during connect" is not one of
+    // them: the CLI puts that in front of every transport failure, a rejected
+    // TLS certificate included, and those leave the daemon's state open.
+    private val STOPPED_PHRASES = listOf(
+        "cannot connect to the docker daemon",
+        "failed to connect to the docker api",
+        "docker daemon is not running"
+    )
+
+    private val DENIED_PHRASES = listOf(
+        "permission denied while trying to connect"
+    )
+
+    // The operating system's own wording also turns up for unrelated files (a
+    // missing ca.pem, an unreadable key), so it only counts on a line that
+    // names the daemon's endpoint. Windows writes it in the system language.
+    private val ENDPOINT = listOf("dial unix", "open //./pipe/")
+
+    private val OS_MISSING = listOf(
+        "no such file or directory",
+        "connection refused",
+        "cannot find the file specified",
+        "系统找不到指定的文件"
+    )
+
+    private val OS_DENIED = listOf(
         "permission denied",
         "access is denied",
         "拒绝访问"
-    )
-
-    private val STOPPED_MARKERS = listOf(
-        "cannot connect to the docker daemon",
-        "failed to connect to the docker api",
-        "is the docker daemon running",
-        "docker daemon is not running",
-        "error during connect",
-        "connection refused",
-        "no such file or directory",
-        "cannot find the file specified"
     )
 
     /** Locates the Docker CLI: `PATH` first, then the usual install locations. */
@@ -171,15 +184,30 @@ object Docker {
 
         // A warning (an unreadable config file, …) is not the reason the daemon is silent.
         val complaints = lines.filterNot { it.startsWith("warning", ignoreCase = true) }
-        fun firstWith(markers: List<String>): String? =
-            complaints.firstOrNull { line -> markers.any { it in line.lowercase() } }
 
-        firstWith(DENIED_MARKERS)?.let { return DaemonAnswer(DockerDaemon.DENIED, detail = it.take(300)) }
-        firstWith(STOPPED_MARKERS)?.let { return DaemonAnswer(DockerDaemon.STOPPED, detail = it.take(300)) }
+        // Refused is checked first: that message also says the daemon could not be reached.
+        complaints.firstOrNull(::refused)?.let {
+            return DaemonAnswer(DockerDaemon.DENIED, detail = it.take(300))
+        }
+        complaints.firstOrNull(::unreachable)?.let {
+            return DaemonAnswer(DockerDaemon.STOPPED, detail = it.take(300))
+        }
         return DaemonAnswer(
             DockerDaemon.UNKNOWN,
             detail = (complaints.firstOrNull() ?: lines.firstOrNull())?.take(300)
         )
+    }
+
+    private fun refused(line: String): Boolean {
+        val text = line.lowercase()
+        return DENIED_PHRASES.any { it in text } ||
+            (ENDPOINT.any { it in text } && OS_DENIED.any { it in text })
+    }
+
+    private fun unreachable(line: String): Boolean {
+        val text = line.lowercase()
+        return STOPPED_PHRASES.any { it in text } ||
+            (ENDPOINT.any { it in text } && OS_MISSING.any { it in text })
     }
 
     /** The container runtime NOIR is running in, or null on an ordinary host. */

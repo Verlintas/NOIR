@@ -9,9 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Docker detection** — `noir doctor` now reports whether Docker is installed
   and whether its daemon is running, and prints the fix when the daemon is
-  stopped or refuses access. Docker stays optional: the row never changes the
-  exit code, and the check only runs the local `docker --version` and
-  `docker version`.
+  stopped or refuses access. Any other failure, such as a rejected TLS
+  certificate, is shown as unknown with Docker's own message. Docker stays
+  optional: the row never changes the exit code, and the check only runs the
+  local `docker --version` and `docker version`.
 - **container awareness** — NOIR recognises when it runs inside Docker, Podman,
   Kubernetes or LXC. `doctor` shows a `container` row, and the "no device"
   guidance explains USB passthrough instead of blaming the cable.

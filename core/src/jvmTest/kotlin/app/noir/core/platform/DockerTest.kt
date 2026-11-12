@@ -114,6 +114,95 @@ class DockerTest {
     }
 
     @Test
+    fun `windows blames privileges even when the pipe is simply missing`() {
+        // A non-elevated client gets this sentence whatever went wrong; only the
+        // operating system's own half says whether the pipe exists.
+        val prefix = "error during connect: in the default daemon configuration on Windows, the docker " +
+            "client must be run with elevated privileges to connect: " +
+            "Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/version\": open //./pipe/docker_engine: "
+
+        assertEquals(
+            DockerDaemon.STOPPED,
+            Docker.parseDaemon(1, prefix + "The system cannot find the file specified.\n").state
+        )
+        assertEquals(DockerDaemon.DENIED, Docker.parseDaemon(1, prefix + "Access is denied.\n").state)
+
+        // Docker Desktop's pipe on a Chinese Windows.
+        val desktopZh = Docker.parseDaemon(
+            1,
+            "error during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/version\": " +
+                "open //./pipe/dockerDesktopLinuxEngine: 系统找不到指定的文件。\n"
+        )
+        assertEquals(DockerDaemon.STOPPED, desktopZh.state)
+    }
+
+    @Test
+    fun `a tls failure is not a stopped daemon`() {
+        // All four were printed by Docker 29 against a port that was listening.
+        // "error during connect" is the CLI's prefix for every transport failure,
+        // so it says nothing about whether the daemon is up.
+        val untrusted = Docker.parseDaemon(
+            1,
+            "\nerror during connect: Get \"https://127.0.0.1:2376/v1.56/version\": tls: failed to verify " +
+                "certificate: x509: certificate signed by unknown authority\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, untrusted.state)
+        assertTrue(untrusted.detail!!.contains("x509: certificate signed by unknown authority"))
+
+        val plainToTls = Docker.parseDaemon(
+            1,
+            "\nerror during connect: Get \"http://127.0.0.1:2376/v1.56/version\": read tcp " +
+                "127.0.0.1:46398->127.0.0.1:2376: read: connection reset by peer\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, plainToTls.state)
+
+        val tlsToPlain = Docker.parseDaemon(
+            1,
+            "\nerror during connect: Get \"https://127.0.0.1:2375/v1.56/version\": http: server gave HTTP " +
+                "response to HTTPS client\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, tlsToPlain.state)
+
+        // An SSH endpoint that refuses the connection is not a stopped daemon either.
+        val ssh = Docker.parseDaemon(
+            1,
+            "error during connect: Get \"http://docker.example.com/v1.56/version\": command [ssh -o " +
+                "ConnectTimeout=30 -T -- host docker system dial-stdio] has exited with exit status 255, " +
+                "make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: " +
+                "stderr=ssh: connect to host host port 22: Connection refused\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, ssh.state)
+    }
+
+    @Test
+    fun `operating system errors only count for the daemon's own endpoint`() {
+        // Docker 29 with DOCKER_TLS_VERIFY=1 and no certificates: a file is
+        // missing, but it is not the socket.
+        val missingCa = Docker.parseDaemon(
+            1,
+            "Failed to initialize: unable to resolve docker endpoint: open /home/u/.docker/ca.pem: " +
+                "no such file or directory\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, missingCa.state)
+        assertTrue(missingCa.detail!!.contains("ca.pem"))
+
+        val missingCaWindows = Docker.parseDaemon(
+            1,
+            "Failed to initialize: unable to resolve docker endpoint: open C:\\Users\\u\\.docker\\ca.pem: " +
+                "The system cannot find the file specified.\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, missingCaWindows.state)
+
+        // Likewise an unreadable key is not a refused socket.
+        val unreadableKey = Docker.parseDaemon(
+            1,
+            "Failed to initialize: unable to resolve docker endpoint: open /home/u/.docker/key.pem: " +
+                "permission denied\n"
+        )
+        assertEquals(DockerDaemon.UNKNOWN, unreadableKey.state)
+    }
+
+    @Test
     fun `an unreadable config file does not turn a stopped daemon into a denied one`() {
         val answer = Docker.parseDaemon(
             1,
