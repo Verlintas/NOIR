@@ -225,8 +225,11 @@ docker run --rm -it \
 - 宿主机上如果也装了 adb，先执行 `adb kill-server`，否则它会占住手机。
 - 命令末尾可以接任何子命令，例如 `… noir doctor`、`… noir ui`。
 - `deep` / `deepscan` 需要的 jadx 不在镜像里：执行一次 `… noir setup --yes`，它会下载到 `noir-home`。
-- 容器内以 root 运行，所以 `noir-out/` 里的文件属主是 root。
 - 在容器里找不到设备时，NOIR 会直接提示上面的透传参数。
+
+> **权限说明**：容器内的 NOIR 和 adb 以 root 运行，这样才能打开透传进来的 USB 设备节点。
+> 上面两个 USB 参数给出的是宿主机上**全部** USB 设备的访问权，不只是手机，所以只运行你自己构建的镜像。
+> 副作用是 `noir-out/` 里的文件属主也是 root。
 
 macOS / Windows 的 Docker Desktop 不能把 USB 设备透传进容器，这两个系统请用方式一的便携包。
 
