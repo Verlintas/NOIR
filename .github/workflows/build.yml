@@ -78,3 +78,55 @@ jobs:
         if: always()
         shell: bash
         run: ./gradlew --stop || true
+
+  docker:
+    name: docker (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # .dockerignore is an allowlist: a local scan report must not reach a layer.
+      - name: Plant a report the build context must ignore
+        shell: bash
+        run: |
+          mkdir -p noir-out
+          echo "private scan data" > noir-out/report.json
+
+      - name: Build image
+        shell: bash
+        run: docker build -t noir:ci .
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm noir:ci --version
+          docker run --rm --entrypoint adb noir:ci version
+          # No phone here, so doctor exits 1. It must still find the packaged
+          # adb, notice the container and explain USB passthrough.
+          docker run --rm -e NOIR_LANG=en noir:ci doctor | tee doctor.txt || true
+          grep -q "container docker" doctor.txt
+          grep -q "adb       /usr/bin/adb" doctor.txt
+          grep -q "no device detected in the container" doctor.txt
+
+      - name: Build context holds the allowlist only
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --target build -t noir:ci-build .
+          allowed='build\.gradle\.kts|settings\.gradle\.kts|gradle\.properties|gradlew|gradle|core|cli|LICENSE|build|\.gradle|\.kotlin'
+          extra="$(docker run --rm --entrypoint ls noir:ci-build -A /src | grep -vxE "$allowed" || true)"
+          if [ -n "$extra" ]; then
+            echo "unexpected files in the build context:"
+            echo "$extra"
+            exit 1
+          fi
